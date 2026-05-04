@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 import { Send, Image as ImageIcon, Heart, MessageCircle, ShieldAlert, Trash2 } from 'lucide-react';
+import PublicProfileModal from '../components/PublicProfileModal';
 
 export default function Feed() {
   const { user, token } = useAuth();
   const [posts, setPosts] = useState<any[]>([]);
   const [newPostText, setNewPostText] = useState('');
+  const [selectedProfileUser, setSelectedProfileUser] = useState<any | null>(null);
 
   const fetchPosts = async () => {
     if (!token) return;
@@ -126,11 +128,21 @@ export default function Feed() {
               <div className="mb-6">
                 <div className="flex justify-between items-start mb-6 border-b border-white/10 pb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-bl from-purple-500 to-blue-500 flex items-center justify-center font-bold overflow-hidden shrink-0">
+                    <button 
+                      type="button" 
+                      onClick={() => setSelectedProfileUser(post.author)}
+                      className="w-10 h-10 rounded-full bg-gradient-to-bl from-purple-500 to-blue-500 flex items-center justify-center font-bold overflow-hidden shrink-0 hover:scale-105 transition-transform shadow-[0_0_15px_rgba(168,85,247,0.4)]"
+                    >
                        {post.author?.avatar ? <img src={post.author.avatar} className="w-full h-full object-cover" /> : (post.author?.name.charAt(0).toUpperCase() || '?')}
-                    </div>
+                    </button>
                     <div>
-                      <h3 className="font-black tracking-tight">{post.author?.name?.toUpperCase() || 'UNKNOWN'}</h3>
+                      <button 
+                        type="button" 
+                        onClick={() => setSelectedProfileUser(post.author)}
+                        className="font-black tracking-tight hover:text-blue-400 focus:text-blue-400 transition-colors text-left outline-none block"
+                      >
+                        {post.author?.name?.toUpperCase() || 'UNKNOWN'}
+                      </button>
                       <p className="text-[10px] uppercase text-white/40 tracking-[0.1em]">
                         {formatDistanceToNow(post.timestamp)} AGO
                       </p>
@@ -178,6 +190,13 @@ export default function Feed() {
           )}
         </div>
       </div>
+      
+      {selectedProfileUser && (
+        <PublicProfileModal 
+          user={selectedProfileUser} 
+          onClose={() => setSelectedProfileUser(null)} 
+        />
+      )}
     </div>
   );
 }

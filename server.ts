@@ -271,6 +271,14 @@ async function startServer() {
     res.json(friends);
   });
 
+  app.get("/api/friends/requests/sent", (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const outgoingReqs = db.friendRequests.filter(r => r.fromId === userId && r.status === 'pending');
+    res.json(outgoingReqs);
+  });
+
   app.get("/api/friends/requests", (req, res) => {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });

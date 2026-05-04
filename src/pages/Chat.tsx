@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { io } from 'socket.io-client';
 import { format } from 'date-fns';
 import { Send, MessageCircle, ShieldAlert, Search } from 'lucide-react';
 
 export default function Chat() {
+  const location = useLocation();
   const { user, token } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -22,7 +24,16 @@ export default function Chat() {
     fetch('/api/users', { headers: { Authorization: `Bearer ${token}` } })
       .then(res => res.json())
       .then(data => {
-        setUsers(data.filter((u: any) => u.id !== user?.id));
+        const filtered = data.filter((u: any) => u.id !== user?.id);
+        setUsers(filtered);
+        
+        // Auto-select user from navigation state if present
+        if (location.state?.selectedUserId) {
+          const u = filtered.find((usr: any) => usr.id === location.state.selectedUserId);
+          if (u) setSelectedUser(u);
+          // clear state so it doesn't re-select randomly on refresh
+          window.history.replaceState({}, document.title)
+        }
       });
   };
 
