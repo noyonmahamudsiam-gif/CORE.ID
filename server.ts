@@ -4,19 +4,47 @@ import { Server } from "socket.io";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import nodemailer from "nodemailer";
+import rateLimit from "express-rate-limit";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret-for-development";
+
+// Emulate Email Sending (configure real SMTP in production)
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.ethereal.email',
+  port: Number(process.env.SMTP_PORT) || 587,
+  auth: {
+    user: process.env.SMTP_USER || 'ethereal.user@ethereal.email',
+    pass: process.env.SMTP_PASS || 'etherealpass'
+  }
+});
+
+// Helper to simulate emails during dev if no real SMTP exists
+const sendEmail = async (to: string, subject: string, text: string) => {
+  console.log(`\n\n=== EMAIL TO: ${to} ===\nSubject: ${subject}\n\n${text}\n========================\n\n`);
+  try {
+    if (process.env.SMTP_HOST) {
+      await transporter.sendMail({ from: '"Core.ID System" <noreply@core.id>', to, subject, text });
+    }
+  } catch (err) {
+    console.error("Failed to send real email", err);
+  }
+};
+
 // In-memory data store for MVP
 const db = {
   users: [] as any[],
+  otps: [] as { email: string, code: string, expiresAt: number, type: 'register' | 'reset', name?: string, passwordHash?: string }[],
   posts: [] as any[],
   messages: [] as any[],
   friendRequests: [] as { fromId: string, toId: string, status: 'pending' | 'accepted' | 'rejected' }[],
   friends: [] as { user1Id: string, user2Id: string }[],
   blocks: [] as { blockerId: string, blockedId: string }[],
-  resetTokens: [] as { token: string, email: string }[],
   notifications: [] as { id: string, userId: string, type: 'friend_request' | 'system', content: string, read: boolean, timestamp: number, relatedId?: string }[]
 };
 
@@ -32,8 +60,9 @@ const getUserId = (req: express.Request) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return null;
   try {
-    const { id } = JSON.parse(Buffer.from(authHeader.replace('Bearer ', ''), 'base64').toString('ascii'));
-    return id;
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
+    return decoded.id;
   } catch {
     return null;
   }
@@ -47,19 +76,57 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-  // API Routes - Authentication (Mock)
-  app.post("/api/auth/register", (req, res) => {
+  // Rate Limiter for OTP requests
+  const otpLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 3, // limit each IP to 3 requests per windowMs
+    message: { error: "Too many requests from this IP, please try again after a minute" }
+  });
+
+  // API Routes - Authentication
+  app.post("/api/auth/register", otpLimiter, async (req, res) => {
     const { name, email, password } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+    
+    // Validate format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) return res.status(400).json({ error: "Invalid email format" });
+    if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+
     if (db.users.find((u) => u.email === email)) {
       return res.status(400).json({ error: "User already exists with that email" });
     }
-    const username = `@${name.replace(/\s+/g,'').toLowerCase()}${Math.floor(Math.random() * 10000)}`;
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+    // store OTP temporarily
+    db.otps = db.otps.filter(o => o.email !== email || o.type !== 'register'); // remove old ones
+    db.otps.push({ email, code, expiresAt, type: 'register', name, passwordHash });
+
+    await sendEmail(email, "Your Core.ID Verification Code", `Your verification code is: ${code}\nThis code will expire in 5 minutes.`);
+    res.json({ success: true, message: "Verification code sent to email." });
+  });
+
+  app.post("/api/auth/verify-register", async (req, res) => {
+    const { email, code } = req.body;
+    const otpRecord = db.otps.find(o => o.email === email && o.type === 'register');
+
+    if (!otpRecord) return res.status(400).json({ error: "No verification process found for this email" });
+    if (otpRecord.code !== String(code)) return res.status(400).json({ error: "Invalid verification code" });
+    if (Date.now() > otpRecord.expiresAt) return res.status(400).json({ error: "Verification code has expired" });
+
+    // Code is correct, create the user
+    const username = `@${otpRecord.name!.replace(/\s+/g,'').toLowerCase()}${Math.floor(Math.random() * 10000)}`;
     const newUser = { 
       id: String(Date.now()), 
-      name, 
+      name: otpRecord.name!, 
       username,
       email, 
-      password, 
+      password: otpRecord.passwordHash!, 
       phone: "",
       showEmail: false,
       showPhone: false,
@@ -70,45 +137,82 @@ async function startServer() {
       interests: [] as string[]
     };
     db.users.push(newUser);
-    // Simple token for MVP
-    const token = Buffer.from(JSON.stringify({ id: newUser.id })).toString('base64');
+    db.otps = db.otps.filter(o => o.email !== email || o.type !== 'register'); // consume OTP
+
+    const token = jwt.sign({ id: newUser.id }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, user: { id: newUser.id, name: newUser.name, username: newUser.username, email: newUser.email, phone: newUser.phone, showEmail: newUser.showEmail, showPhone: newUser.showPhone, bio: newUser.bio, aboutMe: newUser.aboutMe, showAboutMe: newUser.showAboutMe, avatar: newUser.avatar, interests: newUser.interests } });
   });
 
-  app.post("/api/auth/login", (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
-    const user = db.users.find((u) => u.email === email && u.password === password);
+    const user = db.users.find((u) => u.email === email);
     if (!user) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
-    const token = Buffer.from(JSON.stringify({ id: user.id })).toString('base64');
+    
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, user: { id: user.id, name: user.name, username: user.username, email: user.email, phone: user.phone, showEmail: user.showEmail, showPhone: user.showPhone, bio: user.bio, aboutMe: user.aboutMe, showAboutMe: user.showAboutMe, avatar: user.avatar, interests: user.interests } });
   });
 
-  app.post("/api/auth/forgot-password", (req, res) => {
+  app.post("/api/auth/forgot-password", otpLimiter, async (req, res) => {
     const { email } = req.body;
     const user = db.users.find((u) => u.email === email);
     if (!user) {
+      // Don't leak whether user exists, but pretend we sent it
       return res.json({ success: true, message: "If the email exists, a reset code was sent." });
     }
-    const token = Math.random().toString(36).substring(2, 10).toUpperCase();
-    db.resetTokens.push({ token, email });
-    res.json({ success: true, token, message: "Use this token to reset your password." });
+    
+    const code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+
+    db.otps = db.otps.filter(o => o.email !== email || o.type !== 'reset'); // clear old
+    db.otps.push({ email, code, expiresAt, type: 'reset' });
+
+    await sendEmail(email, "Your Password Reset Code", `Your password reset code is: ${code}\nThis code will expire in 5 minutes.`);
+    res.json({ success: true, message: "If the email exists, a reset code was sent." });
   });
 
-  app.post("/api/auth/reset-password", (req, res) => {
+  app.post("/api/auth/verify-reset-code", async (req, res) => {
+    const { email, code } = req.body;
+    
+    // In order for the next step (reset password) to be secure without requiring email tracking solely in frontend, 
+    // we generate a temporary reset token once OTP is validated.
+    const otpRecord = db.otps.find(o => o.email === email && o.type === 'reset');
+    if (!otpRecord) return res.status(400).json({ error: "No reset request found" });
+    if (otpRecord.code !== String(code)) return res.status(400).json({ error: "Invalid reset code" });
+    if (Date.now() > otpRecord.expiresAt) return res.status(400).json({ error: "Reset code has expired" });
+
+    // OTP matched. Consume it and generate a one-time token for password reset
+    db.otps = db.otps.filter(o => o.email !== email || o.type !== 'reset');
+    const resetToken = jwt.sign({ email, intent: 'reset_password' }, JWT_SECRET, { expiresIn: '15m' });
+
+    res.json({ success: true, token: resetToken });
+  });
+
+  app.post("/api/auth/reset-password", async (req, res) => {
     const { token, password } = req.body;
-    const resetRecord = db.resetTokens.find((r) => r.token === token);
-    if (!resetRecord) {
-      return res.status(400).json({ error: "Invalid or expired token" });
+    if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { email: string, intent: string };
+      if (decoded.intent !== 'reset_password') throw new Error("Invalid token intent");
+
+      const user = db.users.find((u) => u.email === decoded.email);
+      if (!user) return res.status(400).json({ error: "User not found" });
+
+      user.password = await bcrypt.hash(password, 10);
+      
+      // Optionally we could verify if the token was already used by maintaining a consumed tokens list,
+      // but for MVP JWT expiration is generally good enough.
+      res.json({ success: true, message: "Password updated successfully" });
+    } catch {
+      res.status(400).json({ error: "Invalid or expired token" });
     }
-    const user = db.users.find((u) => u.email === resetRecord.email);
-    if (!user) {
-      return res.status(400).json({ error: "User not found" });
-    }
-    user.password = password;
-    db.resetTokens = db.resetTokens.filter((r) => r.token !== token);
-    res.json({ success: true });
   });
 
   app.get("/api/me", (req, res) => {

@@ -2,15 +2,19 @@ import React, { useState } from 'react';
 import { useAuth } from '../AuthContext';
 import { Navigate } from 'react-router-dom';
 
+type AuthMode = 'login' | 'register' | 'verify-register' | 'forgot' | 'verify-reset' | 'reset-password';
+
 export default function Auth() {
   const { user, login } = useAuth();
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'reset'>('login');
+  const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [otp, setOtp] = useState('');
   const [resetToken, setResetToken] = useState('');
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [loading, setLoading] = useState(false);
 
   if (user) {
     return <Navigate to="/" />;
@@ -20,9 +24,38 @@ export default function Auth() {
     e.preventDefault();
     setError('');
     setSuccessMsg('');
+    setLoading(true);
 
-    if (mode === 'forgot') {
-      try {
+    try {
+      if (mode === 'register') {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, password })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setSuccessMsg(data.message);
+          setMode('verify-register');
+          setOtp('');
+        } else {
+          setError(data.error);
+        }
+      } 
+      else if (mode === 'verify-register') {
+        const res = await fetch('/api/auth/verify-register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code: otp })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          login(data.token, data.user);
+        } else {
+          setError(data.error);
+        }
+      }
+      else if (mode === 'forgot') {
         const res = await fetch('/api/auth/forgot-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -30,19 +63,30 @@ export default function Auth() {
         });
         const data = await res.json();
         if (res.ok) {
-          setSuccessMsg(`Requested reset for ${email}. Token: ${data.token}`);
-          setMode('reset');
+          setSuccessMsg(data.message);
+          setMode('verify-reset');
+          setOtp('');
         } else {
-          setError(data.error || 'Failed to request reset');
+          setError(data.error);
         }
-      } catch (err) {
-        setError('Network error. Please try again.');
       }
-      return;
-    }
-
-    if (mode === 'reset') {
-      try {
+      else if (mode === 'verify-reset') {
+        const res = await fetch('/api/auth/verify-reset-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code: otp })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setResetToken(data.token);
+          setMode('reset-password');
+          setPassword('');
+          setSuccessMsg('Code verified. Enter your new security key.');
+        } else {
+          setError(data.error);
+        }
+      }
+      else if (mode === 'reset-password') {
         const res = await fetch('/api/auth/reset-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -54,33 +98,46 @@ export default function Auth() {
           setMode('login');
           setPassword('');
         } else {
-          setError(data.error || 'Failed to reset password');
+          setError(data.error);
         }
-      } catch (err) {
-        setError('Network error. Please try again.');
       }
-      return;
-    }
-
-    const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
-    const body = mode === 'login' ? { email, password } : { name, email, password };
-    
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      if (res.ok) {
-        login(data.token, data.user);
-      } else {
-        setError(data.error || 'Authentication failed');
+      else if (mode === 'login') {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          login(data.token, data.user);
+        } else {
+          setError(data.error || 'Authentication failed');
+        }
       }
     } catch (err) {
       setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
+
+  const currentTitle = {
+    'login': 'SYSTEM LOGIN',
+    'register': 'INITIALIZE ID',
+    'verify-register': 'VERIFY EMAIL',
+    'forgot': 'REQUEST RESET',
+    'verify-reset': 'VERIFY RESET CODE',
+    'reset-password': 'SET NEW KEY'
+  }[mode];
+
+  const currentButton = {
+    'login': 'ACCESS SYSTEM',
+    'register': 'CREATE PROTOCOL',
+    'verify-register': 'VERIFY AND ENTER',
+    'forgot': 'SEND RESET CODE',
+    'verify-reset': 'VERIFY CODE',
+    'reset-password': 'CONFIRM NEW KEY'
+  }[mode];
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-black p-4 text-white">
@@ -92,10 +149,7 @@ export default function Auth() {
         </div>
         
         <h2 className="text-3xl font-black text-center mb-8 pt-2 leading-tight uppercase tracking-tighter">
-          {mode === 'login' && 'SYSTEM LOGIN'}
-          {mode === 'register' && 'INITIALIZE ID'}
-          {mode === 'forgot' && 'REQUEST RESET'}
-          {mode === 'reset' && 'SET NEW KEY'}
+          {currentTitle}
         </h2>
 
         {successMsg && (
@@ -120,7 +174,7 @@ export default function Auth() {
                 onChange={(e) => setName(e.target.value)}
                 className="w-full px-4 py-4 rounded-full bg-white/5 border border-white/10 focus:border-blue-500 transition-colors outline-none text-white font-bold placeholder:text-white/20"
                 placeholder="DISPLAY NAME"
-                required={mode === 'register'} 
+                required 
               />
             </div>
           )}
@@ -139,30 +193,31 @@ export default function Auth() {
             </div>
           )}
 
-          {mode === 'reset' && (
+          {(mode === 'verify-register' || mode === 'verify-reset') && (
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-2">Reset Token</label>
+              <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-2">4-Digit Verification Code</label>
               <input 
                 type="text" 
-                value={resetToken}
-                onChange={(e) => setResetToken(e.target.value)}
-                className="w-full px-4 py-4 rounded-full bg-white/5 border border-white/10 focus:border-blue-500 transition-colors outline-none text-white font-bold placeholder:text-white/20"
-                placeholder="TOKEN"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                className="w-full px-4 py-4 rounded-full bg-white/5 border border-white/10 focus:border-blue-500 transition-colors outline-none text-white font-bold text-center tracking-[1em] placeholder:text-white/20 placeholder:tracking-normal"
+                placeholder="0000"
+                maxLength={4}
                 required 
               />
             </div>
           )}
 
-          {(mode === 'login' || mode === 'register' || mode === 'reset') && (
+          {(mode === 'login' || mode === 'register' || mode === 'reset-password') && (
             <div>
               <div className="flex justify-between items-center mb-2">
                 <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">
-                  {mode === 'reset' ? 'New Security Key' : 'Security Key'}
+                  {mode === 'reset-password' ? 'New Security Key' : 'Security Key'}
                 </label>
                 {mode === 'login' && (
                   <button 
                     type="button" 
-                    onClick={() => setMode('forgot')}
+                    onClick={() => { setMode('forgot'); setError(''); setSuccessMsg(''); }}
                     className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-500 hover:text-white transition-colors"
                   >
                     Forgot Key?
@@ -174,7 +229,8 @@ export default function Auth() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-4 rounded-full bg-white/5 border border-white/10 focus:border-blue-500 transition-colors outline-none text-white font-bold placeholder:text-white/20"
-                placeholder="PASSWORD"
+                placeholder="PASSWORD (MIN 6 CHARS)"
+                minLength={6}
                 required 
               />
             </div>
@@ -182,24 +238,54 @@ export default function Auth() {
           
           <button 
             type="submit" 
-            className="w-full bg-blue-500 text-white font-black uppercase tracking-tighter py-4 px-4 rounded-full hover:bg-white hover:text-black transition-colors"
+            disabled={loading}
+            className={`w-full bg-blue-500 text-white font-black uppercase tracking-tighter py-4 px-4 rounded-full transition-colors flex justify-center items-center ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white hover:text-black'}`}
           >
-            {mode === 'login' && 'ACCESS SYSTEM'}
-            {mode === 'register' && 'CREATE PROTOCOL'}
-            {mode === 'forgot' && 'REQUEST RESET'}
-            {mode === 'reset' && 'CONFIRM NEW KEY'}
+            {loading ? (
+              <svg className="animate-spin h-5 w-5 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : currentButton}
           </button>
         </form>
 
         <p className="mt-8 text-center text-xs font-bold uppercase tracking-widest text-white/40">
-          {(mode === 'login' || mode === 'forgot' || mode === 'reset') ? "NEW TO CORE.ID? " : "ALREADY REGISTERED? "}
-          <button 
-            onClick={() => { setMode(mode === 'register' ? 'login' : 'register'); setError(''); setSuccessMsg(''); }} 
-            className="text-blue-500 hover:text-white transition-colors ml-2"
-          >
-            {(mode === 'login' || mode === 'forgot' || mode === 'reset') ? 'INITIALIZE' : 'LOGIN'}
-          </button>
+           {(mode === 'login' || mode === 'forgot' || mode === 'verify-reset' || mode === 'reset-password') ? "NEW TO CORE.ID? " : "ALREADY REGISTERED? "}
+           <button 
+             type="button"
+             disabled={loading}
+             onClick={() => { 
+               setMode(
+                 (mode === 'login' || mode === 'forgot' || mode === 'verify-reset' || mode === 'reset-password') ? 'register' : 'login'
+               ); 
+               setError(''); 
+               setSuccessMsg(''); 
+             }} 
+             className="text-blue-500 hover:text-white transition-colors ml-2"
+           >
+             {(mode === 'login' || mode === 'forgot' || mode === 'verify-reset' || mode === 'reset-password') ? 'INITIALIZE' : 'LOGIN'}
+           </button>
         </p>
+
+        {(mode === 'verify-register' || mode === 'verify-reset') && (
+           <p className="mt-4 text-center text-xs font-bold uppercase tracking-widest text-white/40">
+             Didn't receive code?&nbsp;
+             <button 
+               type="button"
+               disabled={loading}
+               onClick={() => {
+                 setMode(mode === 'verify-register' ? 'register' : 'forgot');
+                 setError('');
+                 setSuccessMsg('');
+                 setOtp('');
+               }} 
+               className="text-blue-500 hover:text-white transition-colors"
+             >
+               Go Back & Resend
+             </button>
+           </p>
+        )}
       </div>
     </div>
   );
