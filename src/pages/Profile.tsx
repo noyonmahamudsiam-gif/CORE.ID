@@ -13,6 +13,8 @@ export default function Profile() {
   const [editShowPhone, setEditShowPhone] = useState(false);
   const [editInterests, setEditInterests] = useState('');
   const [editBio, setEditBio] = useState('');
+  const [editAboutMe, setEditAboutMe] = useState('');
+  const [editShowAboutMe, setEditShowAboutMe] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -26,6 +28,8 @@ export default function Profile() {
       setEditShowPhone(user.showPhone || false);
       setEditInterests((user.interests || []).join(', '));
       setEditBio(user.bio || '');
+      setEditAboutMe(user.aboutMe || '');
+      setEditShowAboutMe(user.showAboutMe || false);
     }
   }, [user]);
 
@@ -41,6 +45,8 @@ export default function Profile() {
         showEmail: editShowEmail, 
         showPhone: editShowPhone, 
         bio: editBio,
+        aboutMe: editAboutMe,
+        showAboutMe: editShowAboutMe,
         interests: editInterests.split(',').map(s => s.trim()).filter(Boolean)
       };
       
@@ -65,23 +71,54 @@ export default function Profile() {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !token) return;
+    setErrorMsg('');
 
     const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64 = event.target?.result;
-      try {
-        const res = await fetch('/api/users/me', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ avatar: base64 })
-        });
-        const data = await res.json();
-        if (data.success) {
-          setUser(data.user);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
         }
-      } catch (err) {
-        console.error(err);
-      }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        const base64 = canvas.toDataURL('image/jpeg', 0.8);
+        try {
+          const res = await fetch('/api/users/me', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ avatar: base64 })
+          });
+          const data = await res.json();
+          if (data.success) {
+            setUser(data.user);
+          } else {
+            setErrorMsg(data.error || 'Failed to upload avatar');
+          }
+        } catch (err) {
+          console.error(err);
+          setErrorMsg('Network error while uploading image. Please try again.');
+        }
+      };
+      img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
   };
@@ -324,6 +361,26 @@ export default function Profile() {
                 {isEditing ? (
                   <div className="space-y-4">
                     <div>
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-white/40 block mb-1">About Me (Public/Private)</label>
+                      <textarea 
+                        value={editAboutMe}
+                        onChange={(e) => setEditAboutMe(e.target.value.substring(0, 300))}
+                        className="w-full glass bg-white/5 p-4 rounded-3xl outline-none text-sm font-bold tracking-wide text-white border border-white/10 focus:border-blue-500 transition-colors resize-none placeholder:text-white/20"
+                        placeholder="A SHORT INTRO ABOUT YOURSELF..."
+                        rows={2}
+                        maxLength={300}
+                      />
+                      <div className="flex justify-between items-center mt-2">
+                         <label className="flex items-center gap-2 text-xs font-bold text-white/60 cursor-pointer">
+                           <input type="checkbox" checked={editShowAboutMe} onChange={(e) => setEditShowAboutMe(e.target.checked)} className="rounded border-white/20" />
+                           Visible to others
+                         </label>
+                         <div className="text-right text-[10px] font-bold uppercase tracking-widest text-white/40">
+                           {editAboutMe.length} / 300
+                         </div>
+                      </div>
+                    </div>
+                    <div>
                       <label className="text-[10px] uppercase font-bold tracking-widest text-white/40 block mb-1">Interests (Comma separated)</label>
                       <input 
                         type="text" 
@@ -334,11 +391,11 @@ export default function Profile() {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] uppercase font-bold tracking-widest text-white/40 block mb-1">Bio</label>
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-white/40 block mb-1">Logs / Bio (Private Notes)</label>
                       <textarea
                         value={editBio}
                         onChange={(e) => setEditBio(e.target.value.substring(0, 160))}
-                        className="w-full bg-black/20 glass p-6 rounded-3xl outline-none text-xl md:text-2xl font-bold leading-tight tracking-tight text-white border focus:border-blue-500 transition-colors resize-none placeholder:text-white/20"
+                        className="w-full bg-black/20 glass p-6 rounded-3xl outline-none text-xl md:text-2xl font-bold leading-tight tracking-tight text-white border border-transparent focus:border-blue-500 transition-colors resize-none placeholder:text-white/20"
                         placeholder="ENTER SUPPLEMENTAL DATA..."
                         rows={4}
                         maxLength={160}
@@ -350,9 +407,26 @@ export default function Profile() {
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    <p className="text-xl md:text-3xl font-bold leading-tight tracking-tight text-white/80 whitespace-pre-wrap">
-                      {user.bio || "NO SUPPLEMENTAL DATA PROVIDED. ENTITY PREFERS TO REMAIN ENCRYPTED."}
-                    </p>
+                    {user.aboutMe && (
+                      <div className="bg-white/5 border border-white/10 p-4 rounded-2xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-2">
+                           {user.showAboutMe ? (
+                             <span className="text-[10px] font-bold uppercase tracking-widest text-green-400 bg-green-500/20 px-2 py-1 rounded">Public</span>
+                           ) : (
+                             <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 bg-white/10 px-2 py-1 rounded border border-white/10">Private</span>
+                           )}
+                        </div>
+                        <p className="text-[10px] uppercase font-bold tracking-widest text-white/40 mb-2">About Me</p>
+                        <p className="text-sm md:text-base font-bold text-white/80 whitespace-pre-wrap">{user.aboutMe}</p>
+                      </div>
+                    )}
+                    
+                    <div>
+                      <p className="text-[10px] uppercase font-bold tracking-widest text-white/40 mb-2 mt-4 block">Personal Logs</p>
+                      <p className="text-xl md:text-3xl font-bold leading-tight tracking-tight text-white/80 whitespace-pre-wrap">
+                        {user.bio || "NO SUPPLEMENTAL DATA PROVIDED. ENTITY PREFERS TO REMAIN ENCRYPTED."}
+                      </p>
+                    </div>
                     {user.interests && user.interests.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-4">
                         {user.interests.map((interest: string, i: number) => (
@@ -447,7 +521,7 @@ export default function Profile() {
                          </div>
                          <div className="overflow-hidden">
                            <p className="font-bold uppercase tracking-wide truncate">{s.name}</p>
-                           <p className="text-[10px] text-white/40 uppercase tracking-widest truncate">{s.bio || 'New Entity'}</p>
+                           <p className="text-[10px] text-white/40 uppercase tracking-widest truncate">{s.aboutMe || 'New Entity'}</p>
                          </div>
                        </div>
                        <button onClick={() => handleSendRequest(s.id)} className="bg-white/10 text-white px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider hover:bg-blue-500 transition-colors shrink-0">Connect</button>

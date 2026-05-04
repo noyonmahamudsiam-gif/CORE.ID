@@ -44,7 +44,8 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: "10mb" }));
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
   // API Routes - Authentication (Mock)
   app.post("/api/auth/register", (req, res) => {
@@ -63,13 +64,15 @@ async function startServer() {
       showEmail: false,
       showPhone: false,
       bio: "", 
+      aboutMe: "",
+      showAboutMe: false,
       avatar: "",
       interests: [] as string[]
     };
     db.users.push(newUser);
     // Simple token for MVP
     const token = Buffer.from(JSON.stringify({ id: newUser.id })).toString('base64');
-    res.json({ token, user: { id: newUser.id, name: newUser.name, username: newUser.username, email: newUser.email, phone: newUser.phone, showEmail: newUser.showEmail, showPhone: newUser.showPhone, bio: newUser.bio, avatar: newUser.avatar, interests: newUser.interests } });
+    res.json({ token, user: { id: newUser.id, name: newUser.name, username: newUser.username, email: newUser.email, phone: newUser.phone, showEmail: newUser.showEmail, showPhone: newUser.showPhone, bio: newUser.bio, aboutMe: newUser.aboutMe, showAboutMe: newUser.showAboutMe, avatar: newUser.avatar, interests: newUser.interests } });
   });
 
   app.post("/api/auth/login", (req, res) => {
@@ -79,7 +82,7 @@ async function startServer() {
       return res.status(401).json({ error: "Invalid credentials" });
     }
     const token = Buffer.from(JSON.stringify({ id: user.id })).toString('base64');
-    res.json({ token, user: { id: user.id, name: user.name, username: user.username, email: user.email, phone: user.phone, showEmail: user.showEmail, showPhone: user.showPhone, bio: user.bio, avatar: user.avatar, interests: user.interests } });
+    res.json({ token, user: { id: user.id, name: user.name, username: user.username, email: user.email, phone: user.phone, showEmail: user.showEmail, showPhone: user.showPhone, bio: user.bio, aboutMe: user.aboutMe, showAboutMe: user.showAboutMe, avatar: user.avatar, interests: user.interests } });
   });
 
   app.post("/api/auth/forgot-password", (req, res) => {
@@ -114,7 +117,7 @@ async function startServer() {
     
     const user = db.users.find((u) => u.id === userId);
     if (!user) return res.status(404).json({ error: "User not found" });
-    res.json({ user: { id: user.id, name: user.name, username: user.username, email: user.email, phone: user.phone, showEmail: user.showEmail, showPhone: user.showPhone, bio: user.bio, avatar: user.avatar, interests: user.interests } });
+    res.json({ user: { id: user.id, name: user.name, username: user.username, email: user.email, phone: user.phone, showEmail: user.showEmail, showPhone: user.showPhone, bio: user.bio, aboutMe: user.aboutMe, showAboutMe: user.showAboutMe, avatar: user.avatar, interests: user.interests } });
   });
 
   app.put("/api/users/me", (req, res) => {
@@ -124,18 +127,18 @@ async function startServer() {
     const userIndex = db.users.findIndex(u => u.id === userId);
     if (userIndex === -1) return res.status(404).json({ error: "User not found" });
 
-    const { bio, avatar, name, username, email, phone, showEmail, showPhone, interests } = req.body;
+    const { bio, avatar, name, username, email, phone, showEmail, showPhone, interests, aboutMe, showAboutMe } = req.body;
     
     // Check if username is already taken by someone else
     if (username && username !== db.users[userIndex].username) {
-       if (db.users.find(u => u.username === username && u.id !== userId)) {
+       if (db.users.find((u: any) => u.username === username && u.id !== userId)) {
          return res.status(400).json({ error: "Username is already taken" });
        }
        db.users[userIndex].username = username;
     }
     // Check if email is already taken by someone else
     if (email && email !== db.users[userIndex].email) {
-       if (db.users.find(u => u.email === email && u.id !== userId)) {
+       if (db.users.find((u: any) => u.email === email && u.id !== userId)) {
          return res.status(400).json({ error: "Email is already taken" });
        }
        db.users[userIndex].email = email;
@@ -148,9 +151,11 @@ async function startServer() {
     if (showEmail !== undefined) db.users[userIndex].showEmail = showEmail;
     if (showPhone !== undefined) db.users[userIndex].showPhone = showPhone;
     if (interests !== undefined) db.users[userIndex].interests = interests;
+    if (aboutMe !== undefined) db.users[userIndex].aboutMe = aboutMe;
+    if (showAboutMe !== undefined) db.users[userIndex].showAboutMe = showAboutMe;
     
     const u = db.users[userIndex];
-    res.json({ success: true, user: { id: u.id, name: u.name, username: u.username, email: u.email, phone: u.phone, showEmail: u.showEmail, showPhone: u.showPhone, bio: u.bio, avatar: u.avatar, interests: u.interests } });
+    res.json({ success: true, user: { id: u.id, name: u.name, username: u.username, email: u.email, phone: u.phone, showEmail: u.showEmail, showPhone: u.showPhone, bio: u.bio, aboutMe: u.aboutMe, showAboutMe: u.showAboutMe, avatar: u.avatar, interests: u.interests } });
   });
 
   // API Routes - Posts
@@ -203,7 +208,7 @@ async function startServer() {
     // Exclude passwords
     const safeUsers = db.users
       .filter((u) => !hiddenUsers.includes(u.id))
-      .map(u => ({ id: u.id, name: u.name, username: u.username, bio: u.bio, avatar: u.avatar, interests: u.interests, email: u.showEmail ? u.email : undefined, phone: u.showPhone ? u.phone : undefined, isOnline: onlineUsers.has(u.id) }));
+      .map(u => ({ id: u.id, name: u.name, username: u.username, bio: u.bio, avatar: u.avatar, interests: u.interests, email: u.showEmail ? u.email : undefined, phone: u.showPhone ? u.phone : undefined, aboutMe: u.showAboutMe ? u.aboutMe : undefined, isOnline: onlineUsers.has(u.id) }));
     res.json(safeUsers);
   });
 
@@ -262,7 +267,7 @@ async function startServer() {
     const friendIds = db.friends.filter(f => f.user1Id === userId || f.user2Id === userId)
       .map(f => f.user1Id === userId ? f.user2Id : f.user1Id);
     
-    const friends = db.users.filter(u => friendIds.includes(u.id)).map(u => ({ id: u.id, name: u.name, username: u.username, avatar: u.avatar, email: u.showEmail ? u.email : undefined, phone: u.showPhone ? u.phone : undefined, isOnline: onlineUsers.has(u.id) }));
+    const friends = db.users.filter(u => friendIds.includes(u.id)).map(u => ({ id: u.id, name: u.name, username: u.username, avatar: u.avatar, email: u.showEmail ? u.email : undefined, phone: u.showPhone ? u.phone : undefined, aboutMe: u.showAboutMe ? u.aboutMe : undefined, isOnline: onlineUsers.has(u.id) }));
     res.json(friends);
   });
 
@@ -296,7 +301,7 @@ async function startServer() {
 
     const suggestions = db.users
       .filter(u => u.id !== userId && !friendIds.includes(u.id) && !pendingReqIds.includes(u.id) && !hiddenUsers.includes(u.id))
-      .map(u => ({ id: u.id, name: u.name, username: u.username, avatar: u.avatar, bio: u.bio, email: u.showEmail ? u.email : undefined, phone: u.showPhone ? u.phone : undefined }))
+      .map(u => ({ id: u.id, name: u.name, username: u.username, avatar: u.avatar, bio: u.bio, email: u.showEmail ? u.email : undefined, phone: u.showPhone ? u.phone : undefined, aboutMe: u.showAboutMe ? u.aboutMe : undefined }))
       .slice(0, 5); // Limit suggestions
 
     res.json(suggestions);

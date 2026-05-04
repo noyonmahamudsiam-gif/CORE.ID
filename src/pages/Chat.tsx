@@ -204,7 +204,7 @@ export default function Chat() {
                 <div className="overflow-hidden flex-1">
                   <h3 className="font-black text-lg tracking-tight truncate">{u.name?.toUpperCase()}</h3>
                   <p className="text-[10px] text-white/40 uppercase tracking-widest truncate">
-                    {u.isOnline ? 'Online' : 'Secure Channel'}
+                    {u.aboutMe || (u.isOnline ? 'Online' : 'Secure Channel')}
                   </p>
                 </div>
                 {unreadCounts[u.id] > 0 && (
@@ -239,7 +239,9 @@ export default function Chat() {
                 </div>
                 <div>
                   <h3 className="font-black text-xl md:text-2xl tracking-tighter truncate max-w-[120px] md:max-w-none">{selectedUser.name?.toUpperCase()}</h3>
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-white/40 hidden md:block">Encrypted Stream</p>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-white/40 hidden md:block truncate max-w-[200px]">
+                    {selectedUser.aboutMe || 'Encrypted Stream'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 md:gap-4 shrink-0">
