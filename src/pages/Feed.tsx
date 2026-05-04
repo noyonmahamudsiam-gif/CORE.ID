@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../AuthContext';
 import { formatDistanceToNow } from 'date-fns';
-import { Send, Image as ImageIcon, Heart, MessageCircle, ShieldAlert } from 'lucide-react';
+import { Send, Image as ImageIcon, Heart, MessageCircle, ShieldAlert, Trash2 } from 'lucide-react';
 
 export default function Feed() {
   const { user, token } = useAuth();
@@ -34,6 +34,21 @@ export default function Feed() {
           headers: { Authorization: `Bearer ${token}` }
         });
         fetchPosts(); // Refresh to remove blocked user's posts
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    if (!token) return;
+    if (confirm("Are you sure you want to delete this transmission?")) {
+      try {
+        await fetch(`/api/posts/${postId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        fetchPosts(); // Refresh feed
       } catch (err) {
         console.error(err);
       }
@@ -77,8 +92,8 @@ export default function Feed() {
         <div className="glass rounded-3xl p-6 md:p-8 mb-12">
           <form onSubmit={handlePostSubmit}>
             <div className="flex gap-4">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-blue-600 to-purple-600 flex items-center justify-center font-bold text-lg shrink-0">
-                {user?.name.charAt(0).toUpperCase()}
+              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-blue-600 to-purple-600 flex items-center justify-center font-bold text-lg shrink-0 overflow-hidden">
+                {user?.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : user?.name.charAt(0).toUpperCase()}
               </div>
               <div className="w-full space-y-4">
                 <textarea
@@ -111,8 +126,8 @@ export default function Feed() {
               <div className="mb-6">
                 <div className="flex justify-between items-start mb-6 border-b border-white/10 pb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-bl from-purple-500 to-blue-500 flex items-center justify-center font-bold">
-                       {post.author?.name.charAt(0).toUpperCase() || '?'}
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-bl from-purple-500 to-blue-500 flex items-center justify-center font-bold overflow-hidden shrink-0">
+                       {post.author?.avatar ? <img src={post.author.avatar} className="w-full h-full object-cover" /> : (post.author?.name.charAt(0).toUpperCase() || '?')}
                     </div>
                     <div>
                       <h3 className="font-black tracking-tight">{post.author?.name?.toUpperCase() || 'UNKNOWN'}</h3>
@@ -122,13 +137,21 @@ export default function Feed() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {post.author?.id !== user?.id && (
+                    {post.author?.id !== user?.id ? (
                       <button 
                         onClick={() => handleBlock(post.author?.id, post.author?.name)}
                         title="Block User"
                         className="text-red-500/50 hover:text-white hover:bg-red-500 p-1.5 rounded-full transition-colors"
                       >
                         <ShieldAlert size={16} />
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => handleDeletePost(post.id)}
+                        title="Delete Transmission"
+                        className="text-red-500/50 hover:text-white hover:bg-red-500 p-1.5 rounded-full transition-colors"
+                      >
+                        <Trash2 size={16} />
                       </button>
                     )}
                     <span className="text-[10px] bg-white/10 px-3 py-1 rounded-full font-bold uppercase tracking-wider group-hover:bg-blue-500 transition-colors">Record</span>
