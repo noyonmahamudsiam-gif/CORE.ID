@@ -21,13 +21,30 @@ const MONGODB_URI = process.env.MONGODB_URI;
 
 mongoose.set("bufferCommands", false); // Fail fast if not connected
 
-if (!MONGODB_URI) {
-  console.error("WARNING: MONGODB_URI environment variable is not set. Please configure your MongoDB Atlas connection string in the Secrets menu.");
-} else {
-  mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 })
-    .then(() => console.log("Connected to persistent MongoDB"))
-    .catch((err) => console.error("Database connection error:", err));
+import { MongoMemoryServer } from 'mongodb-memory-server';
+
+async function connectDB() {
+  if (MONGODB_URI) {
+    try {
+      await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+      console.log("Connected to persistent MongoDB");
+    } catch (err) {
+      console.error("Database connection error:", err);
+    }
+  } else {
+    console.log("No MONGODB_URI found. Starting in-memory MongoDB...");
+    try {
+      const mongoServer = await MongoMemoryServer.create();
+      const uri = mongoServer.getUri();
+      await mongoose.connect(uri);
+      console.log("Connected to in-memory MongoDB (Data will be lost on restart)");
+    } catch (err) {
+      console.error("In-memory MongoDB failed to start:", err);
+    }
+  }
 }
+
+connectDB();
 
 // Mongoose Schemas (Migration Safe)
 const userSchema = new mongoose.Schema({
@@ -173,46 +190,51 @@ async function startServer() {
 
   // API Routes - Authentication
   app.post("/api/auth/register", otpLimiter, async (req, res) => {
-    const { name, identifier, password, gender, dateOfBirth } = req.body;
-    if (!identifier || !password || !name || !gender || !dateOfBirth) {
-      return res.status(400).json({ error: "Missing required fields" });
+    try {
+      const { name, identifier, password, gender, dateOfBirth } = req.body;
+      if (!identifier || !password || !name || !gender || !dateOfBirth) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      
+      // Validate format
+      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+      const isPhone = /^\+?[\d\s-]{7,15}$/.test(identifier);
+      if (!isEmail && !isPhone) return res.status(400).json({ error: "Invalid email or phone format" });
+      if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+
+      // Validate Age 16+
+      const dob = new Date(dateOfBirth);
+      const ageDiffMs = Date.now() - dob.getTime();
+      const ageDate = new Date(ageDiffMs);
+      const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+      if (age < 16) return res.status(400).json({ error: "You must be at least 16 years old to use this platform." });
+
+      const existingUser = await User.findOne({ $or: [{ email: identifier }, { phone: identifier }] });
+      if (existingUser) {
+        return res.status(400).json({ error: "User already exists with that email or phone number" });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
+      const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+      // store OTP temporarily, update existing if any
+      await OTP.findOneAndUpdate(
+        { identifier, type: 'register' },
+        { code, expiresAt, name, gender, dateOfBirth, passwordHash, consumed: false },
+        { upsert: true }
+      );
+
+      if (isEmail) {
+        await sendEmail(identifier, "Your Core.ID Verification Code", `Your verification code is: ${code}\nThis code will expire in 5 minutes.`);
+      } else {
+        console.log(`[SMS MOCK] Sending to ${identifier}: Your verification code is ${code}`);
+      }
+      res.json({ success: true, message: "Verification code sent." });
+    } catch (err) {
+      console.error("Register Error:", err);
+      res.status(500).json({ error: "Internal Server Error. Please contact support or try again." });
     }
-    
-    // Validate format
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
-    const isPhone = /^\+?[\d\s-]{7,15}$/.test(identifier);
-    if (!isEmail && !isPhone) return res.status(400).json({ error: "Invalid email or phone format" });
-    if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
-
-    // Validate Age 16+
-    const dob = new Date(dateOfBirth);
-    const ageDiffMs = Date.now() - dob.getTime();
-    const ageDate = new Date(ageDiffMs);
-    const age = Math.abs(ageDate.getUTCFullYear() - 1970);
-    if (age < 16) return res.status(400).json({ error: "You must be at least 16 years old to use this platform." });
-
-    const existingUser = await User.findOne({ $or: [{ email: identifier }, { phone: identifier }] });
-    if (existingUser) {
-      return res.status(400).json({ error: "User already exists with that email or phone number" });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-    const code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
-
-    // store OTP temporarily, update existing if any
-    await OTP.findOneAndUpdate(
-      { identifier, type: 'register' },
-      { code, expiresAt, name, gender, dateOfBirth, passwordHash, consumed: false },
-      { upsert: true }
-    );
-
-    if (isEmail) {
-      await sendEmail(identifier, "Your Core.ID Verification Code", `Your verification code is: ${code}\nThis code will expire in 5 minutes.`);
-    } else {
-      console.log(`[SMS MOCK] Sending to ${identifier}: Your verification code is ${code}`);
-    }
-    res.json({ success: true, message: "Verification code sent." });
   });
 
   app.post("/api/auth/verify-register", async (req, res) => {
@@ -254,19 +276,24 @@ async function startServer() {
   });
 
   app.post("/api/auth/login", async (req, res) => {
-    const { identifier, password } = req.body;
-    const user = await User.findOne({ $or: [{ email: identifier }, { phone: identifier }] });
-    if (!user) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-    
-    const isValid = await bcrypt.compare(password, user.password);
-    if (!isValid) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
+    try {
+      const { identifier, password } = req.body;
+      const user = await User.findOne({ $or: [{ email: identifier }, { phone: identifier }] });
+      if (!user) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      
+      const isValid = await bcrypt.compare(password, user.password);
+      if (!isValid) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
 
-    const token = jwt.sign({ id: user._id.toString() }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user._id.toString(), name: user.name, username: user.username, email: user.email, phone: user.phone, gender: user.gender, dateOfBirth: user.dateOfBirth, showEmail: user.showEmail, showPhone: user.showPhone, bio: user.bio, aboutMe: user.aboutMe, showAboutMe: user.showAboutMe, avatar: user.avatar, interests: user.interests } });
+      const token = jwt.sign({ id: user._id.toString() }, JWT_SECRET, { expiresIn: '7d' });
+      res.json({ token, user: { id: user._id.toString(), name: user.name, username: user.username, email: user.email, phone: user.phone, gender: user.gender, dateOfBirth: user.dateOfBirth, showEmail: user.showEmail, showPhone: user.showPhone, bio: user.bio, aboutMe: user.aboutMe, showAboutMe: user.showAboutMe, avatar: user.avatar, interests: user.interests } });
+    } catch (err) {
+      console.error("Login Error:", err);
+      res.status(500).json({ error: "Internal Server Error" });
+    }
   });
 
   app.post("/api/auth/forgot-password", otpLimiter, async (req, res) => {
