@@ -37,9 +37,9 @@ export default function Auth() {
         });
         const data = await res.json();
         if (res.ok) {
-          setSuccessMsg(data.message);
+          setSuccessMsg(data.message + (data.mockCode ? ` (Dev Code: ${data.mockCode})` : ''));
           setMode('verify-register');
-          setOtp('');
+          setOtp(data.mockCode || '');
         } else {
           setError(data.error);
         }
@@ -65,9 +65,9 @@ export default function Auth() {
         });
         const data = await res.json();
         if (res.ok) {
-          setSuccessMsg(data.message);
+          setSuccessMsg(data.message + (data.mockCode ? ` (Dev Code: ${data.mockCode})` : ''));
           setMode('verify-reset');
-          setOtp('');
+          setOtp(data.mockCode || '');
         } else {
           setError(data.error);
         }

@@ -230,7 +230,11 @@ async function startServer() {
       } else {
         console.log(`[SMS MOCK] Sending to ${identifier}: Your verification code is ${code}`);
       }
-      res.json({ success: true, message: "Verification code sent." });
+      res.json({ 
+        success: true, 
+        message: "Verification code sent.",
+        mockCode: !process.env.SMTP_HOST ? code : undefined
+      });
     } catch (err) {
       console.error("Register Error:", err);
       res.status(500).json({ error: "Internal Server Error. Please contact support or try again." });
@@ -320,7 +324,11 @@ async function startServer() {
       console.log(`[SMS MOCK] Sending to ${identifier}: Your reset code is ${code}`);
     }
     
-    res.json({ success: true, message: "If the account exists, a reset code was sent." });
+    res.json({ 
+      success: true, 
+      message: "If the account exists, a reset code was sent.",
+      mockCode: !process.env.SMTP_HOST ? code : undefined 
+    });
   });
 
   app.post("/api/auth/verify-reset-code", async (req, res) => {
