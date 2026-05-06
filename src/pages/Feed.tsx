@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { Send, Image as ImageIcon, Heart, MessageCircle, ShieldAlert, Trash2 } from 'lucide-react';
 import PublicProfileModal from '../components/PublicProfileModal';
 
 export default function Feed() {
   const { user, token } = useAuth();
+  const navigate = useNavigate();
   const [posts, setPosts] = useState<any[]>([]);
   const [newPostText, setNewPostText] = useState('');
   const [selectedProfileUser, setSelectedProfileUser] = useState<any | null>(null);
@@ -150,13 +152,22 @@ export default function Feed() {
                   </div>
                   <div className="flex items-center gap-2">
                     {post.author?.id !== user?.id ? (
-                      <button 
-                        onClick={() => handleBlock(post.author?.id, post.author?.name)}
-                        title="Block User"
-                        className="text-red-500/50 hover:text-white hover:bg-red-500 p-1.5 rounded-full transition-colors"
-                      >
-                        <ShieldAlert size={16} />
-                      </button>
+                      <>
+                        <button 
+                          onClick={() => navigate('/chat', { state: { selectedUserId: post.author?.id } })}
+                          title="Message User"
+                          className="text-blue-500/50 hover:text-white hover:bg-blue-500 p-1.5 rounded-full transition-colors"
+                        >
+                          <MessageCircle size={16} />
+                        </button>
+                        <button 
+                          onClick={() => handleBlock(post.author?.id, post.author?.name)}
+                          title="Block User"
+                          className="text-red-500/50 hover:text-white hover:bg-red-500 p-1.5 rounded-full transition-colors"
+                        >
+                          <ShieldAlert size={16} />
+                        </button>
+                      </>
                     ) : (
                       <button 
                         onClick={() => handleDeletePost(post.id)}

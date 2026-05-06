@@ -7,9 +7,11 @@ type AuthMode = 'login' | 'register' | 'verify-register' | 'forgot' | 'verify-re
 export default function Auth() {
   const { user, login } = useAuth();
   const [mode, setMode] = useState<AuthMode>('login');
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [gender, setGender] = useState('Prefer not to say');
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [otp, setOtp] = useState('');
   const [resetToken, setResetToken] = useState('');
   const [error, setError] = useState('');
@@ -31,7 +33,7 @@ export default function Auth() {
         const res = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, email, password })
+          body: JSON.stringify({ name, identifier, password, gender, dateOfBirth })
         });
         const data = await res.json();
         if (res.ok) {
@@ -46,7 +48,7 @@ export default function Auth() {
         const res = await fetch('/api/auth/verify-register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, code: otp })
+          body: JSON.stringify({ identifier, code: otp })
         });
         const data = await res.json();
         if (res.ok) {
@@ -59,7 +61,7 @@ export default function Auth() {
         const res = await fetch('/api/auth/forgot-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email })
+          body: JSON.stringify({ identifier })
         });
         const data = await res.json();
         if (res.ok) {
@@ -74,7 +76,7 @@ export default function Auth() {
         const res = await fetch('/api/auth/verify-reset-code', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, code: otp })
+          body: JSON.stringify({ identifier, code: otp })
         });
         const data = await res.json();
         if (res.ok) {
@@ -105,7 +107,7 @@ export default function Auth() {
         const res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password })
+          body: JSON.stringify({ identifier, password })
         });
         const data = await res.json();
         if (res.ok) {
@@ -181,15 +183,45 @@ export default function Auth() {
           
           {(mode === 'login' || mode === 'register' || mode === 'forgot') && (
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-2">Comms Address</label>
+              <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-2">Comms Address (Email/Phone)</label>
               <input 
-                type="email" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text" 
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full px-4 py-4 rounded-full bg-white/5 border border-white/10 focus:border-blue-500 transition-colors outline-none text-white font-bold placeholder:text-white/20"
-                placeholder="EMAIL"
+                placeholder="EMAIL OR PHONE"
                 required 
               />
+            </div>
+          )}
+
+          {mode === 'register' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-2">Gender</label>
+                <select 
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value)}
+                  className="w-full px-4 py-4 rounded-full bg-black/50 border border-white/10 focus:border-blue-500 transition-colors outline-none text-white font-bold appearance-none"
+                  required
+                >
+                  <option value="Prefer not to say">Prefer not to say</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-2">Date of Birth</label>
+                <input 
+                  type="date" 
+                  value={dateOfBirth}
+                  onChange={(e) => setDateOfBirth(e.target.value)}
+                  className="w-full px-4 py-4 rounded-full bg-white/5 border border-white/10 focus:border-blue-500 transition-colors outline-none text-white font-bold"
+                  required
+                  max={new Date().toISOString().split('T')[0]}
+                />
+              </div>
             </div>
           )}
 

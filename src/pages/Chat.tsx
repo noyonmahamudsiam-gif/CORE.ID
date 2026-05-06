@@ -85,6 +85,10 @@ export default function Chat() {
       }
     });
 
+    newSocket.on('messageError', ({ error }) => {
+      alert(error);
+    });
+
     newSocket.on('userStatusChange', ({ userId, isOnline }) => {
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, isOnline } : u));
     });

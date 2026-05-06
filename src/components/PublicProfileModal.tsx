@@ -80,11 +80,30 @@ export default function PublicProfileModal({ user, onClose }: { user: any, onClo
         </button>
 
         <div className="flex flex-col items-center mb-8">
-           <div className="w-24 h-24 rounded-full bg-gradient-to-bl from-purple-500 to-blue-500 flex items-center justify-center font-bold text-3xl overflow-hidden mb-4 shadow-xl shadow-purple-500/20 text-white">
+           <div className="w-24 h-24 rounded-full bg-gradient-to-bl from-purple-500 to-blue-500 flex items-center justify-center font-bold text-3xl overflow-hidden mb-4 shadow-xl shadow-purple-500/20 text-white relative group">
               {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : user.name.charAt(0).toUpperCase()}
            </div>
            <h2 className="text-3xl font-black tracking-tighter uppercase whitespace-nowrap overflow-hidden text-ellipsis max-w-full text-white">{user.name}</h2>
            {user.username && <p className="text-sm font-bold uppercase tracking-widest text-blue-400 mt-1">{user.username}</p>}
+           
+           <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+             {user.gender && (
+               <span className="text-[10px] font-bold uppercase tracking-widest bg-white/5 border border-white/10 px-2 py-1 rounded">
+                 {user.gender}
+                 {user.genderVerified && <span className="text-green-400 ml-1">✓ AI VFD</span>}
+               </span>
+             )}
+             {user.dateOfBirth && (
+               <span className="text-[10px] font-bold uppercase tracking-widest bg-white/5 border border-white/10 px-2 py-1 rounded">
+                 {user.dateOfBirth}
+                 {user.ageVerified && <span className="text-green-400 ml-1">✓ ID VFD</span>}
+               </span>
+             )}
+             <span className="text-[10px] font-bold uppercase tracking-widest bg-white/5 border border-white/10 px-2 py-1 rounded">
+                 EMAIL
+                 <span className="text-green-400 ml-1">✓ VFD</span>
+             </span>
+           </div>
         </div>
 
         <div className="space-y-6">

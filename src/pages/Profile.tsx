@@ -15,6 +15,7 @@ export default function Profile() {
   const [editBio, setEditBio] = useState('');
   const [editAboutMe, setEditAboutMe] = useState('');
   const [editShowAboutMe, setEditShowAboutMe] = useState(false);
+  const [editMessagePrivacy, setEditMessagePrivacy] = useState('everyone');
   const [errorMsg, setErrorMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -30,6 +31,7 @@ export default function Profile() {
       setEditBio(user.bio || '');
       setEditAboutMe(user.aboutMe || '');
       setEditShowAboutMe(user.showAboutMe || false);
+      setEditMessagePrivacy(user.messagePrivacy || 'everyone');
     }
   }, [user]);
 
@@ -44,6 +46,7 @@ export default function Profile() {
         phone: editPhone, 
         showEmail: editShowEmail, 
         showPhone: editShowPhone, 
+        messagePrivacy: editMessagePrivacy,
         bio: editBio,
         aboutMe: editAboutMe,
         showAboutMe: editShowAboutMe,
@@ -121,6 +124,30 @@ export default function Profile() {
       img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleVerifyRequest = async (type: 'gender' | 'age') => {
+    if (!token) return;
+    if (confirm(`Do you want to simulate ${type === 'gender' ? 'AI Facial Recognition' : 'ID Document Verification'} to verify your ${type}?`)) {
+      try {
+        const payload: any = {};
+        if (type === 'gender') payload.genderVerified = true;
+        if (type === 'age') payload.ageVerified = true;
+        
+        const res = await fetch('/api/users/me', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+          setUser(data.user);
+          alert(`${type === 'gender' ? 'Facial' : 'Document'} verification successful.`);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
   };
 
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -332,8 +359,8 @@ export default function Profile() {
                       <h1 className="text-5xl font-black tracking-tighter uppercase">{user.name}</h1>
                       <div className="flex flex-wrap items-center gap-3 mt-3">
                          <span className="text-sm uppercase tracking-widest text-blue-400 font-bold bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">{user.username}</span>
-                         {user.showEmail && <span className="text-sm tracking-wide text-white/60 font-bold glass px-3 py-1 rounded-full">{user.email}</span>}
-                         {user.showPhone && user.phone && <span className="text-sm tracking-wide text-white/60 font-bold glass px-3 py-1 rounded-full">{user.phone}</span>}
+                         {user.showEmail && <span className="text-sm tracking-wide text-white/60 font-bold glass px-3 py-1 rounded-full flex items-center gap-2">{user.email} <span className="text-[10px] text-green-400 font-black uppercase tracking-widest">Verified ✓</span></span>}
+                         {user.showPhone && user.phone && <span className="text-sm tracking-wide text-white/60 font-bold glass px-3 py-1 rounded-full flex items-center gap-2">{user.phone} <span className="text-[10px] text-green-400 font-black uppercase tracking-widest">Verified ✓</span></span>}
                       </div>
                     </>
                   )}
@@ -404,6 +431,21 @@ export default function Profile() {
                         {editBio.length} / 160 CHARACTERS
                       </div>
                     </div>
+                    <div className="pt-8 border-t border-white/10">
+                      <h2 className="text-[10px] uppercase font-bold tracking-widest text-white/40 mb-4 block">Privacy Options</h2>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold tracking-widest text-white/40 block mb-1">Who Can Message You</label>
+                        <select 
+                          value={editMessagePrivacy}
+                          onChange={(e) => setEditMessagePrivacy(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500 transition-colors outline-none text-white font-bold appearance-none uppercase text-xs tracking-widest"
+                        >
+                          <option value="everyone">Everyone</option>
+                          <option value="friends">Friends Only</option>
+                          <option value="none">No One</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -436,6 +478,31 @@ export default function Profile() {
                         ))}
                       </div>
                     )}
+                    
+                    <div className="mt-8 pt-8 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="glass p-4 rounded-2xl relative overflow-hidden flex justify-between items-center bg-blue-500/5">
+                        <div>
+                          <p className="text-[10px] uppercase font-bold tracking-widest text-blue-400 mb-1 block">Gender Identity</p>
+                          <p className="text-sm font-bold text-white uppercase">{user.gender}</p>
+                        </div>
+                        {user.genderVerified ? (
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-green-400 bg-green-500/20 px-2 py-1 rounded border border-green-500/50">Verified AI</span>
+                        ) : (
+                          <button onClick={() => handleVerifyRequest('gender')} className="text-[10px] font-bold uppercase tracking-widest text-white hover:text-black bg-white/10 hover:bg-white px-3 py-1 rounded border border-white/10 transition-colors">Verify Now</button>
+                        )}
+                      </div>
+                      <div className="glass p-4 rounded-2xl relative overflow-hidden flex justify-between items-center bg-purple-500/5">
+                        <div>
+                          <p className="text-[10px] uppercase font-bold tracking-widest text-purple-400 mb-1 block">Age Bracket</p>
+                          <p className="text-sm font-bold text-white uppercase">{user.dateOfBirth}</p>
+                        </div>
+                        {user.ageVerified ? (
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-green-400 bg-green-500/20 px-2 py-1 rounded border border-green-500/50">ID Verified</span>
+                        ) : (
+                          <button onClick={() => handleVerifyRequest('age')} className="text-[10px] font-bold uppercase tracking-widest text-white hover:text-black bg-white/10 hover:bg-white px-3 py-1 rounded border border-white/10 transition-colors">Verify Now</button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
